@@ -1,0 +1,698 @@
+#!/usr/bin/env bash
+set -e
+echo "Creating SoftHub files..."
+
+# Helper to ensure dir exists
+ensure_dir() {
+  mkdir -p "$(dirname "$1")"
+}
+
+# prisma/schema.prisma
+ensure_dir "prisma/schema.prisma"
+cat > prisma/schema.prisma <<'EOF'
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  role             Role      @default(USER)
+  bio              String?
+  avatarUrl        String?
+  skillsOffered    String[]  @default([])
+  skillsWanted     String[]  @default([])
+  xp               Int       @default(0)
+  level            Int       @default(1)
+  badges           Badge[]   @relation("UserBadges")
+  plan             Plan?     @relation(fields: [planId], references: [id])
+  planId           String?
+  projects         Project[]
+  submissions      Submission[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Course {
+  id           String   @id @default(uuid())
+  title        String
+  skill        String
+  level        String
+  description  String?
+  lessons      Lesson[]
+  finalProject Json?
+  createdAt    DateTime @default(now())
+}
+
+model Lesson {
+  id           String   @id @default(uuid())
+  course       Course   @relation(fields: [courseId], references: [id])
+  courseId     String
+  title        String
+  content      String?  // markdown
+  videoUrl     String?
+  durationMin  Int?
+  quiz         Quiz?
+  quizId       String?
+  order        Int      @default(0)
+}
+
+model Quiz {
+  id        String   @id @default(uuid())
+  questions Json
+}
+
+model Challenge {
+  id          String   @id @default(uuid())
+  title       String
+  skill       String
+  brief       String
+  deliverables String[]
+  rubric      Json
+  autoChecks  String[] @default([])
+  createdAt   DateTime @default(now())
+}
+
+model Submission {
+  id           String   @id @default(uuid())
+  challenge    Challenge @relation(fields: [challengeId], references: [id])
+  challengeId  String
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  files        Json?
+  repoUrl      String?
+  answers      Json?
+  score        Float?
+  status       SubmissionStatus @default(PENDING)
+  feedback     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  title       String
+  description String
+  tags        String[]
+  images      String[]
+  deployedUrl String?
+  repoUrl     String?
+  badges      String[] @default([])
+  createdAt   DateTime @default(now())
+}
+
+model Opportunity {
+  id           String   @id @default(uuid())
+  title        String
+  org          String
+  type         String
+  description  String
+  requirements String[]
+  isPremium    Boolean  @default(false)
+  postedAt     DateTime @default(now())
+}
+
+model Match {
+  id        String  @id @default(uuid())
+  type      String
+  userAId   String
+  userBId   String
+  score     Float
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model Badge {
+  id    String @id @default(uuid())
+  name  String
+  users User[] @relation("UserBadges")
+}
+
+model Plan {
+  id          String   @id
+  name        String
+  priceMonthly Int
+  currency    String
+  features    String[] @default([])
+  limits      Json?
+}
+
+enum Role {
+  USER
+  MENTOR
+  EMPLOYER
+  ADMIN
+}
+
+enum SubmissionStatus {
+  PENDING
+  AUTO_CHECKED
+  PEER_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+// Ads models
+model Ad {
+  id             String   @id @default(uuid())
+  title          String
+  advertiserName String
+  imageUrl       String?
+  targetUrl      String
+  cpm            Int       // stored in currency's minor unit (e.g., kobo)
+  slot           Int       // 1..3 (slot position preference)
+  isNative       Boolean   @default(false)
+  frequencyCap   Int?      // e.g., max impressions per user per day
+  isActive       Boolean  @default(false)
+  approvedById   String?
+  startAt        DateTime?
+  endAt          DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  impressions    AdImpression[]
+  clicks         AdClick[]
+}
+
+model AdImpression {
+  id        String   @id @default(uuid())
+  ad        Ad       @relation(fields: [adId], references: [id])
+  adId      String
+  userId    String?  // nullable, for logged-in anonymized mapping
+  sessionId String?  // optional
+  ipHash    String?  // store hashed ip for dedupe (not raw)
+  counted   Boolean  @default(false) // only true when counted as billable (viewable)
+  createdAt DateTime @default(now())
+}
+
+model AdClick {
+  id        String   @id @default(uuid())
+  ad        Ad       @relation(fields: [adId], references: [id])
+  adId      String
+  userId    String?
+  ipHash    String?
+  createdAt DateTime @default(now())
+}
+EOF
+
+# seed/data.seed.json
+ensure_dir "seed/data.seed.json"
+cat > seed/data.seed.json <<'EOF'
+{
+  "metadata": {
+    "generatedAt": "2026-08-07T00:00:00Z",
+    "source": "SoftHub seed bundle"
+  },
+  "pricingPlans": [
+    {
+      "id": "free",
+      "name": "Free",
+      "priceMonthly": 0,
+      "currency": "NGN",
+      "features": [
+        "Basic lessons",
+        "Community",
+        "Limited AI assistance",
+        "Basic challenges"
+      ],
+      "limits": {
+        "aiRequestsPerMonth": 100
+      }
+    },
+    {
+      "id": "premium",
+      "name": "Premium",
+      "priceMonthly": 1000,
+      "currency": "NGN",
+      "features": [
+        "Full courses",
+        "More AI usage",
+        "Advanced challenges",
+        "Premium certificates",
+        "Advanced learning paths",
+        "Extra resources"
+      ],
+      "limits": {
+        "aiRequestsPerMonth": 5000
+      }
+    }
+  ],
+  "ads": [
+    {
+      "id": "ad_1",
+      "title": "Learn UX Faster",
+      "advertiserName": "Design Academy",
+      "imageUrl": "https://example.com/creative1.png",
+      "targetUrl": "https://designacademy.example.com",
+      "cpm": 200000,
+      "slot": 1,
+      "isNative": false,
+      "frequencyCap": 3,
+      "isActive": true
+    },
+    {
+      "id": "ad_2",
+      "title": "Start Freelancing Today",
+      "advertiserName": "GigWorks",
+      "imageUrl": "https://example.com/creative2.png",
+      "targetUrl": "https://gigworks.example.com",
+      "cpm": 300000,
+      "slot": 2,
+      "isNative": true,
+      "frequencyCap": 2,
+      "isActive": true
+    }
+  ]
+}
+EOF
+
+# lib/prisma.ts
+ensure_dir "lib/prisma.ts"
+cat > lib/prisma.ts <<'EOF'
+import { PrismaClient } from '@prisma/client'
+
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined
+}
+
+export const prisma = global.prisma || new PrismaClient()
+if (process.env.NODE_ENV !== 'production') global.prisma = prisma
+EOF
+
+# pages/api/ads/index.ts
+ensure_dir "pages/api/ads/index.ts"
+cat > pages/api/ads/index.ts <<'EOF'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../lib/prisma'
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { slot } = req.query
+  if (!slot) return res.status(400).json({ error: 'slot required' })
+  const slotNum = parseInt(Array.isArray(slot) ? slot[0] : slot, 10)
+  const now = new Date()
+  try {
+    const ad = await prisma.ad.findFirst({
+      where: {
+        slot: slotNum,
+        isActive: true,
+        AND: [
+          {
+            OR: [
+              { startAt: null },
+              { startAt: { lte: now } }
+            ]
+          },
+          {
+            OR: [
+              { endAt: null },
+              { endAt: { gte: now } }
+            ]
+          }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    if (!ad) return res.status(200).json({ ad: null })
+
+    // sanitize response: don't send CPM to clients
+    const { cpm, ...sanitized } = ad as any
+    res.status(200).json({ ad: sanitized })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'internal' })
+  }
+}
+EOF
+
+# pages/api/ads/[id]/impression.ts
+ensure_dir "pages/api/ads/[id]/impression.ts"
+cat > pages/api/ads/[id]/impression.ts <<'EOF'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../../lib/prisma'
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { id } = req.query
+  if (!id || Array.isArray(id)) return res.status(400).json({ error: 'invalid id' })
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' })
+
+  const { userId, sessionId, visibilityMs, percentVisible, ipHash } = req.body
+  const adId = id
+  const visibility = Number(visibilityMs || 0)
+  const percent = Number(percentVisible || 0)
+
+  try {
+    const ad = await prisma.ad.findUnique({ where: { id: adId as string } })
+    if (!ad) return res.status(404).json({ error: 'ad not found' })
+
+    // viewability rule: >=1000ms && >=50% visible
+    let counted = false
+    if (visibility >= 1000 && percent >= 50) counted = true
+
+    // frequency cap enforcement (per-user per-day) if userId and ad.frequencyCap
+    if (counted && userId && ad.frequencyCap) {
+      const start = new Date()
+      start.setUTCHours(0,0,0,0)
+      const end = new Date()
+      end.setUTCHours(23,59,59,999)
+      const todaysCount = await prisma.adImpression.count({
+        where: { adId: adId as string, userId: userId as string, counted: true, createdAt: { gte: start, lte: end } }
+      })
+      if (todaysCount >= ad.frequencyCap) counted = false
+    }
+
+    const imp = await prisma.adImpression.create({
+      data: {
+        adId: adId as string,
+        userId: userId || null,
+        sessionId: sessionId || null,
+        ipHash: ipHash || null,
+        counted
+      }
+    })
+
+    res.status(200).json({ success: true, counted })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'internal' })
+  }
+}
+EOF
+
+# pages/api/ads/[id]/click.ts
+ensure_dir "pages/api/ads/[id]/click.ts"
+cat > pages/api/ads/[id]/click.ts <<'EOF'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../../lib/prisma'
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { id } = req.query
+  if (!id || Array.isArray(id)) return res.status(400).end('invalid id')
+  const adId = id as string
+  try {
+    const ad = await prisma.ad.findUnique({ where: { id: adId } })
+    if (!ad) return res.status(404).end('ad not found')
+
+    // Record click (best-effort, minimal PII)
+    await prisma.adClick.create({ data: { adId, userId: null, ipHash: null } })
+
+    // Redirect to targetUrl
+    return res.redirect(ad.targetUrl)
+  } catch (err) {
+    console.error(err)
+    res.status(500).end('internal')
+  }
+}
+EOF
+
+# components/AdSlot.tsx
+ensure_dir "components/AdSlot.tsx"
+cat > components/AdSlot.tsx <<'EOF'
+import React, { useEffect, useRef, useState } from 'react'
+
+type Ad = { id: string; title: string; advertiserName: string; imageUrl?: string; targetUrl: string; isNative?: boolean }
+
+export default function AdSlot({ slot } : { slot: number }) {
+  const [ad, setAd] = useState<Ad|null>(null)
+  const ref = useRef<HTMLDivElement|null>(null)
+  const [sent, setSent] = useState(false)
+
+  useEffect(() => {
+    async function loadAd(){
+      const res = await fetch(`/api/ads?slot=${slot}`)
+      const data = await res.json()
+      if (data?.ad) setAd(data.ad)
+    }
+    loadAd()
+  }, [slot])
+
+  useEffect(() => {
+    if (!ad || sent) return
+    let visibleMs = 0
+    let timer: number | null = null
+
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting && e.intersectionRatio >= 0.5) {
+          timer = window.setInterval(() => {
+            visibleMs += 200
+            if (visibleMs >= 1000 && !sent) {
+              fetch(`/api/ads/${ad.id}/impression`, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ visibilityMs: visibleMs, percentVisible: Math.round(e.intersectionRatio*100) })
+              }).finally(()=> setSent(true))
+              if (timer) { clearInterval(timer); timer = null }
+            }
+          }, 200)
+        } else {
+          if (timer) { clearInterval(timer); timer = null }
+          visibleMs = 0
+        }
+      })
+    }, { threshold: [0,0.5,1] })
+
+    if (ref.current) obs.observe(ref.current)
+    return () => { if (timer) clearInterval(timer); obs.disconnect() }
+  }, [ad, sent])
+
+  if (!ad) return null
+
+  return (
+    <div ref={ref} className="ad-slot border rounded p-2 bg-white">
+      <div className="text-xs text-gray-500">Sponsored • {ad.advertiserName}</div>
+      {ad.imageUrl ? (
+        <a href={`/api/ads/${ad.id}/click`} target="_blank" rel="noopener noreferrer">
+          <img src={ad.imageUrl} alt={ad.title} className="w-full h-auto" />
+        </a>
+      ) : (
+        <a href={`/api/ads/${ad.id}/click`} className="block text-blue-600">{ad.title}</a>
+      )}
+    </div>
+  )
+}
+EOF
+
+# pages/index.tsx
+ensure_dir "pages/index.tsx"
+cat > pages/index.tsx <<'EOF'
+import React from 'react'
+import Head from 'next/head'
+import AdSlot from '../components/AdSlot'
+
+export default function Home() {
+  return (
+    <div>
+      <Head>
+        <title>SoftHub — Learn. Practice. Connect. Grow.</title>
+      </Head>
+      <main className="max-w-4xl mx-auto p-6">
+        <section className="text-center py-12">
+          <h1 className="text-4xl font-bold">Learn Skills That Can Change Your Future</h1>
+          <p className="mt-4 text-lg">Learn practical digital skills, practice them through challenges, connect with other learners, and discover opportunities—all in one place.</p>
+          <div className="mt-6 flex justify-center gap-4">
+            <a className="bg-indigo-600 text-white px-6 py-3 rounded" href="/signup">Start Learning</a>
+            <a className="border px-6 py-3 rounded" href="/skills">Explore Skills</a>
+          </div>
+        </section>
+
+        <section className="grid md:grid-cols-3 gap-6 my-8">
+          <div className="md:col-span-2">
+            <h2 className="text-2xl font-semibold mb-4">Featured</h2>
+            <div className="space-y-4">
+              <div className="bg-white p-4 rounded shadow">Main content or course listings go here.</div>
+              <div className="bg-white p-4 rounded shadow">More content</div>
+            </div>
+          </div>
+
+          <aside className="space-y-4">
+            <AdSlot slot={1} />
+            <AdSlot slot={2} />
+            <AdSlot slot={3} />
+          </aside>
+        </section>
+
+      </main>
+    </div>
+  )
+}
+EOF
+
+# pages/api/health.ts
+ensure_dir "pages/api/health.ts"
+cat > pages/api/health.ts <<'EOF'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../lib/prisma'
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.status(200).json({ status: 'ok' })
+}
+EOF
+
+# scripts/seed.js
+ensure_dir "scripts/seed.js"
+cat > scripts/seed.js <<'EOF'
+const { PrismaClient } = require('@prisma/client')
+const fs = require('fs')
+const path = require('path')
+
+const prisma = new PrismaClient()
+
+async function seed(){
+  const seedPath = path.join(process.cwd(),'seed','data.seed.json')
+  if (!fs.existsSync(seedPath)) {
+    console.error('seed/data.seed.json not found')
+    process.exit(1)
+  }
+  const data = JSON.parse(fs.readFileSync(seedPath,'utf8'))
+
+  // Upsert plans
+  if (data.pricingPlans) {
+    for (const p of data.pricingPlans){
+      await prisma.plan.upsert({
+        where: { id: p.id },
+        update: { name: p.name, priceMonthly: p.priceMonthly, currency: p.currency, features: p.features, limits: p.limits },
+        create: { id: p.id, name: p.name, priceMonthly: p.priceMonthly, currency: p.currency, features: p.features, limits: p.limits }
+      })
+      console.log('Upserted plan', p.id)
+    }
+  }
+
+  // Upsert ads if present
+  if (data.ads) {
+    for (const a of data.ads){
+      await prisma.ad.upsert({
+        where: { id: a.id },
+        update: {
+          title: a.title,
+          advertiserName: a.advertiserName,
+          imageUrl: a.imageUrl,
+          targetUrl: a.targetUrl,
+          cpm: a.cpm,
+          slot: a.slot,
+          isNative: a.isNative,
+          frequencyCap: a.frequencyCap,
+          isActive: a.isActive
+        },
+        create: {
+          id: a.id,
+          title: a.title,
+          advertiserName: a.advertiserName,
+          imageUrl: a.imageUrl,
+          targetUrl: a.targetUrl,
+          cpm: a.cpm,
+          slot: a.slot,
+          isNative: a.isNative,
+          frequencyCap: a.frequencyCap,
+          isActive: a.isActive
+        }
+      })
+      console.log('Upserted ad', a.id)
+    }
+  }
+
+  console.log('Seeding complete')
+  await prisma.$disconnect()
+}
+
+seed().catch(err=>{ console.error(err); prisma.$disconnect(); process.exit(1) })
+EOF
+
+# scripts/aggregateAds.js
+ensure_dir "scripts/aggregateAds.js"
+cat > scripts/aggregateAds.js <<'EOF'
+const { PrismaClient } = require('@prisma/client')
+const fs = require('fs')
+const path = require('path')
+
+const prisma = new PrismaClient()
+
+async function aggregateForDate(dateStr){
+  const date = dateStr ? new Date(dateStr) : new Date()
+  date.setDate(date.getDate() - 1)
+  const start = new Date(date)
+  start.setUTCHours(0,0,0,0)
+  const end = new Date(date)
+  end.setUTCHours(23,59,59,999)
+
+  console.log(`Aggregating ad impressions for ${start.toISOString().slice(0,10)}`)
+
+  const ads = await prisma.ad.findMany()
+  const rows = []
+  rows.push('adId,adTitle,billableImpressions,clicks,earnings_ngn')
+
+  for (const ad of ads){
+    const countImpr = await prisma.adImpression.count({ where: { adId: ad.id, counted: true, createdAt: { gte: start, lte: end } } })
+    const countClicks = await prisma.adClick.count({ where: { adId: ad.id, createdAt: { gte: start, lte: end } } })
+    const earningsKobo = Math.round((countImpr / 1000) * (ad.cpm || 0))
+    const earningsNgn = (earningsKobo / 100).toFixed(2)
+    rows.push(`${ad.id},"${(ad.title||'').replace(/"/g,'""')}",${countImpr},${countClicks},${earningsNgn}`)
+  }
+
+  const outDir = path.join(process.cwd(),'tmp')
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir)
+  const outPath = path.join(outDir, `ads_aggregation_${start.toISOString().slice(0,10)}.csv`)
+  fs.writeFileSync(outPath, rows.join('\n'))
+  console.log('Wrote', outPath)
+  await prisma.$disconnect()
+}
+
+const arg = process.argv[2]
+aggregateForDate(arg).catch(err=>{ console.error(err); prisma.$disconnect(); process.exit(1) })
+EOF
+
+# .github/workflows/aggregate-ads.yml
+ensure_dir ".github/workflows/aggregate-ads.yml"
+mkdir -p .github/workflows
+cat > .github/workflows/aggregate-ads.yml <<'EOF'
+name: Ads Aggregation Daily
+on:
+  schedule:
+    - cron: '0 1 * * *' # run daily at 01:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run aggregation
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          node scripts/aggregateAds.js
+      - name: Upload CSV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ads-aggregation
+          path: tmp/ads_aggregation_*.csv
+EOF
+
+# Admin APIs and UI
+ensure_dir "pages/api/admin/ads/index.ts"
+cat > pages/api/admin/ads/index.ts <<'EOF'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse){
+  // In production you MUST protect these endpoints with admin auth
+  if (req.method === 'GET'){
+  
