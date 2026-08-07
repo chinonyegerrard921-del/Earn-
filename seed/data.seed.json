@@ -1,0 +1,28 @@
+{
+  "ads": [
+    {
+      "id": "ad_1",
+      "title": "Learn UX Faster",
+      "advertiserName": "Design Academy",
+      "imageUrl": "https://example.com/creative1.png",
+      "targetUrl": "https://designacademy.example.com",
+      "cpm": 200000,        
+      "slot": 1,
+      "isNative": false,
+      "frequencyCap": 3,
+      "isActive": true
+    },
+    {
+      "id": "ad_2",
+      "title": "Start Freelancing Today",
+      "advertiserName": "GigWorks",
+      "imageUrl": "https://example.com/creative2.png",
+      "targetUrl": "https://gigworks.example.com",
+      "cpm": 300000,
+      "slot": 2,
+      "isNative": true,
+      "frequencyCap": 2,
+      "isActive": true
+    }
+  ]
+}
